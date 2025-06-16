@@ -2,7 +2,6 @@ package main;
 
 import com.github.pwrlabs.pwrj.protocol.PWRJ;
 import com.github.pwrlabs.pwrj.protocol.VidaTransactionSubscription;
-import io.pwrlabs.database.rocksdb.MerkleTree;
 import org.bouncycastle.util.encoders.Hex;
 import org.json.JSONObject;
 
@@ -17,6 +16,10 @@ public class Main {
     private static List<String> peersToCheckRootHashWith;
 
     public static void main(String[] args) throws IOException {
+        // Start HTTP server routes
+        api.Routes.start();
+
+        // Begin synchronizing VIDA transactions
         synchronize();
     }
 

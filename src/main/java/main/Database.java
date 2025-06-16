@@ -87,6 +87,9 @@ public class Database {
             setBalance(sender, senderBalance);
             setBalance(receiver, receiverBalance);
 
+            // Persist changes
+            flushChangesToDisk();
+
             return true; // Transfer successful
         } catch (Exception e) {
             e.printStackTrace();
@@ -111,6 +114,7 @@ public class Database {
     public static Void setLastCheckedBlock(long block) {
         try {
             database.addOrUpdateData("lastCheckedBlock".getBytes(), ByteBuffer.allocate(Long.BYTES).putLong(block).array());
+            flushChangesToDisk();
         } catch (Exception e) {
             e.printStackTrace();
         } finally {
@@ -121,6 +125,7 @@ public class Database {
     public static void setBlockRootHash(long blockNumber, byte[] rootHash) {
         try {
             database.addOrUpdateData(("blockRootHash_" + blockNumber).getBytes(), rootHash);
+            flushChangesToDisk();
         } catch (Exception e) {
             e.printStackTrace();
         }
