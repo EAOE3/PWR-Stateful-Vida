@@ -61,7 +61,15 @@ public class Main {
 
     public static void checkRootHashValidityAndSaveProgress(long blockNumber) {
         //check and validate that majority of peers have the same root hash for the given block number 2/3 are needed
+        byte[] rootHash = Database.getRootHash();
+        if (rootHash == null) {
+            System.err.println("Root hash is null for block number: " + blockNumber);
+            return;
+        } else {
+            //Compare
+        }
 
         //save root hash
+        Database.setBlockRootHash(blockNumber, rootHash);
     }
 }

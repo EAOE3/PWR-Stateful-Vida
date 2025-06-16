@@ -27,6 +27,18 @@ public class Database {
         }));
     }
 
+    public static byte[] getRootHash() {
+        return database.getRootHash();
+    }
+
+    public static void flushChangesToDisk() {
+        try {
+            database.flushToDisk();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
     public static BigInteger getBalance(byte[] address) {
         try {
             // Retrieve the balance from the database
