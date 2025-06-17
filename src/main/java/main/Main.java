@@ -10,7 +10,12 @@ import org.rocksdb.RocksDBException;
 
 import java.io.IOException;
 import java.math.BigInteger;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
@@ -27,6 +32,8 @@ public final class Main {
     private static final PWRJ PWRJ_CLIENT = new PWRJ("https://pwrrrpc.pwrlabs.io/");
     private static List<String> peersToCheckRootHashWith;
     private static VidaTransactionSubscription subscription;
+    private static final HttpClient HTTP_CLIENT = HttpClient.newHttpClient();
+    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(10);
 
     public static void main(String[] args) {
         try {
@@ -151,10 +158,56 @@ public final class Main {
         }
     }
 
+    /**
+     * Fetches the root hash from a peer node for the specified block number.
+     *
+     * @param peer the peer hostname/address
+     * @param blockNumber the block number to query
+     * @return BiResult where first element indicates successful connection, second element contains the root hash bytes
+     */
     private static BiResult<Boolean /*Replied*/, byte[]> fetchPeerRootHash(String peer, long blockNumber) {
         try {
-            return new BiResult<>(true, new byte[0]);
+            // Build the URL for the peer's rootHash endpoint
+            String url = "http://" + peer + "/rootHash?blockNumber=" + blockNumber;
+
+            // Create the HTTP request
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .GET()
+                    .timeout(REQUEST_TIMEOUT)
+                    .header("Accept", "text/plain")
+                    .build();
+
+            // Send the request and get response
+            HttpResponse<String> response = HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
+
+            // Check if the response was successful
+            if (response.statusCode() == 200) {
+                String hexString = response.body().trim();
+
+                // Validate that we received a non-empty hex string
+                if (hexString.isEmpty()) {
+                    LOGGER.warning("Peer " + peer + " returned empty root hash for block " + blockNumber);
+                    return new BiResult<>(false, new byte[0]);
+                }
+
+                // Decode the hex string to bytes
+                byte[] rootHash = Hex.decode(hexString);
+
+                LOGGER.fine("Successfully fetched root hash from peer " + peer + " for block " + blockNumber);
+                return new BiResult<>(true, rootHash);
+
+            } else {
+                LOGGER.warning("Peer " + peer + " returned HTTP " + response.statusCode() +
+                        " for block " + blockNumber + ": " + response.body());
+                return new BiResult<>(true, new byte[0]);
+            }
+
+        } catch (IllegalArgumentException e) {
+            LOGGER.warning("Invalid hex response from peer " + peer + " for block " + blockNumber + ": " + e.getMessage());
+            return new BiResult<>(false, new byte[0]);
         } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "Failed to fetch root hash from peer " + peer + " for block " + blockNumber, e);
             return new BiResult<>(false, new byte[0]);
         }
     }
