@@ -48,6 +48,11 @@ public final class DatabaseService {
         TREE.flushToDisk();
     }
 
+    /**
+     * Reverts any unsaved modifications in the underlying Merkle tree.
+     * This is typically used when root hash validation fails and the
+     * last block needs to be reprocessed.
+     */
     public static void revertUnsavedChanges() {
             TREE.revertUnsavedChanges();
     }
