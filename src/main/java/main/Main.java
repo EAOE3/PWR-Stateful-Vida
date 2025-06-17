@@ -3,6 +3,7 @@ package main;
 import com.github.pwrlabs.pwrj.entities.FalconTransaction;
 import com.github.pwrlabs.pwrj.protocol.PWRJ;
 import com.github.pwrlabs.pwrj.protocol.VidaTransactionSubscription;
+import io.pwrlabs.util.encoders.BiResult;
 import org.bouncycastle.util.encoders.Hex;
 import org.json.JSONObject;
 import org.rocksdb.RocksDBException;
@@ -122,7 +123,7 @@ public final class Main {
             int matches = 0;
             for (String peer : peersToCheckRootHashWith) {
                 // TODO: fetch peer root via RPC and compare
-                byte[] peerRoot = fetchPeerRootHash(peer, blockNumber);
+                BiResult<Boolean /**/, byte[]> = fetchPeerRootHash(peer, blockNumber);
                 if (Objects.deepEquals(localRoot, peerRoot)) {
                     matches++;
                 }
@@ -138,8 +139,11 @@ public final class Main {
         }
     }
 
-    private static byte[] fetchPeerRootHash(String peer, long blockNumber) {
-        // Placeholder: implement RPC call to peer for block root hash
-        return new byte[0];
+    private static BiResult<Boolean /*Replied*/, byte[]> fetchPeerRootHash(String peer, long blockNumber) {
+        try {
+            return new BiResult<>(true, new byte[0]);
+        } catch (Exception e) {
+            return new BiResult<>(false, new byte[0]);
+        }
     }
 }
