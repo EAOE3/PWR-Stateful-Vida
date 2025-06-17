@@ -5,7 +5,14 @@ import main.DatabaseService;
 
 import static spark.Spark.get;
 
+/**
+ * HTTP GET endpoints used by the stateful VIDA service.
+ */
 public class GET {
+    /**
+     * Registers the <code>/rootHash</code> endpoint which returns the Merkle
+     * root hash for the requested block number.
+     */
     public static void run() {
         get("/rootHash", (request, response) -> {
             try {
