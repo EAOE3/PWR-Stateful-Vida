@@ -37,12 +37,21 @@ public final class Main {
 
     public static void main(String[] args) {
         try {
+            initInitialBalances();
             initializePeers(args);
             long lastBlock = DatabaseService.getLastCheckedBlock();
             long fromBlock = (lastBlock > 0) ? lastBlock : START_BLOCK;
             subscribeAndSync(fromBlock);
         } catch (IOException | RocksDBException e) {
             LOGGER.log(Level.SEVERE, "Initialization failed", e);
+        }
+    }
+
+    private static void initInitialBalances() throws RocksDBException {
+        if(DatabaseService.getLastCheckedBlock() == 0) {
+            DatabaseService.setBalance(Hex.decode("c767ea1d613eefe0ce1610b18cb047881bafb829"), BigInteger.valueOf(1_0000_000_000_000L));
+            DatabaseService.setBalance(Hex.decode("3b4412f57828d1ceb0dbf0d460f7eb1f21fed8b4"), BigInteger.valueOf(1_0000_000_000_000L));
+            DatabaseService.setBalance(Hex.decode("9282d39ca205806473f4fde5bac48ca6dfb9d300"), BigInteger.valueOf(1_0000_000_000_000L));
         }
     }
 
