@@ -48,6 +48,10 @@ public final class DatabaseService {
         TREE.flushToDisk();
     }
 
+    public static void revertUnsavedChanges() {
+            TREE.revertUnsavedChanges();
+    }
+
     /**
      * Retrieves the balance stored at the given address.
      *

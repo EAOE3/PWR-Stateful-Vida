@@ -26,6 +26,7 @@ public final class Main {
     private static final long START_BLOCK = 1L;
     private static final PWRJ PWRJ_CLIENT = new PWRJ("https://pwrrrpc.pwrlabs.io/");
     private static List<String> peersToCheckRootHashWith;
+    private static VidaTransactionSubscription subscription;
 
     public static void main(String[] args) {
         try {
@@ -58,7 +59,7 @@ public final class Main {
 
     private static void subscribeAndSync(long fromBlock) throws IOException, RocksDBException {
         //The subscription to VIDA transactions has a built in shutdwown hook
-        VidaTransactionSubscription subscription =
+        subscription =
                 PWRJ_CLIENT.subscribeToVidaTransactions(
                         PWRJ_CLIENT,
                         VIDA_ID,
@@ -119,21 +120,32 @@ public final class Main {
     private static void checkRootHashValidityAndSave(long blockNumber) {
         try {
             byte[] localRoot = DatabaseService.getRootHash();
-            long quorum = (peersToCheckRootHashWith.size() * 2) / 3 + 1;
+            int peersCount = peersToCheckRootHashWith.size();
+            long quorum = (peersCount * 2) / 3 + 1;
             int matches = 0;
             for (String peer : peersToCheckRootHashWith) {
                 // TODO: fetch peer root via RPC and compare
-                BiResult<Boolean /**/, byte[]> = fetchPeerRootHash(peer, blockNumber);
-                if (Objects.deepEquals(localRoot, peerRoot)) {
-                    matches++;
+                BiResult<Boolean /**/, byte[]> response = fetchPeerRootHash(peer, blockNumber);
+                if(response.getFirst()) {
+                    if(Arrays.equals(response.getSecond(), localRoot)) {
+                        matches++;
+                    }
+                } else {
+                    --peersCount;
+                    quorum = (peersCount * 2) / 3 + 1;
+                }
+
+                if (matches >= quorum) {
+                    DatabaseService.setBlockRootHash(blockNumber, localRoot);
+                    LOGGER.info("Root hash validated and saved for block " + blockNumber);
+                    return;
                 }
             }
-            if (matches >= quorum) {
-                DatabaseService.setBlockRootHash(blockNumber, localRoot);
-                LOGGER.info("Root hash validated and saved for block " + blockNumber);
-            } else {
-                LOGGER.severe("Root hash mismatch: only " + matches + "/" + peersToCheckRootHashWith.size());
-            }
+
+            LOGGER.severe("Root hash mismatch: only " + matches + "/" + peersToCheckRootHashWith.size());
+            //Revert changes and reset block to reprocess the data
+            DatabaseService.revertUnsavedChanges();
+            subscription.setLatestCheckedBlock(DatabaseService.getLastCheckedBlock());
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Error verifying root hash at block " + blockNumber, e);
         }
