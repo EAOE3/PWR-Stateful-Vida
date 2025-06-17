@@ -1,75 +1,145 @@
 package main;
 
+import com.github.pwrlabs.pwrj.entities.FalconTransaction;
 import com.github.pwrlabs.pwrj.protocol.PWRJ;
 import com.github.pwrlabs.pwrj.protocol.VidaTransactionSubscription;
-import io.pwrlabs.database.rocksdb.MerkleTree;
 import org.bouncycastle.util.encoders.Hex;
 import org.json.JSONObject;
+import org.rocksdb.RocksDBException;
 
 import java.io.IOException;
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
-public class Main {
-    public static final long vidaId = 73746238;
-    public static final long startingBlock = 1;
-    public static final PWRJ pwrj = new PWRJ("https://pwrrrpc.pwrlabs.io/");
+/**
+ * Entry point for synchronizing VIDA transactions with the local Merkle-backed database.
+ */
+public final class Main {
+    private static final Logger LOGGER = Logger.getLogger(Main.class.getName());
+    private static final long VIDA_ID = 73_746_238L;
+    private static final long START_BLOCK = 1L;
+    private static final PWRJ PWRJ_CLIENT = new PWRJ("https://pwrrrpc.pwrlabs.io/");
     private static List<String> peersToCheckRootHashWith;
 
-    public static void main(String[] args) throws IOException {
-        synchronize();
+    public static void main(String[] args) {
+        try {
+            initializePeers(args);
+            long lastBlock = DatabaseService.getLastCheckedBlock();
+            long fromBlock = (lastBlock > 0) ? lastBlock : START_BLOCK;
+            subscribeAndSync(fromBlock);
+        } catch (IOException | RocksDBException e) {
+            LOGGER.log(Level.SEVERE, "Initialization failed", e);
+        }
     }
 
-    public static void synchronize() throws IOException {
-        long blockToCheck = Database.getLastCheckedBlock() == 0 ? startingBlock : Database.getLastCheckedBlock();
-
-        VidaTransactionSubscription sub = pwrj.subscribeToVidaTransactions(pwrj, vidaId, blockToCheck, Database::setLastCheckedBlock, txn -> {
-            byte[] data = txn.getData();
-            String senderHexAddress = txn.getSender().startsWith("0x") ? txn.getSender().substring(2) : txn.getSender();
-            byte[] senderAddress = Hex.decode(senderHexAddress);
-            JSONObject json = new JSONObject(new String(data));
-
-            if(json.has("action")) {
-                String action = json.getString("action");
-
-                if(action.equalsIgnoreCase("transfer")) {
-                    BigInteger amount = json.optBigInteger("amount", null);
-                    String receiverHexAddress = json.optString("receiver", null);
-
-                    if(amount != null && receiverHexAddress != null) {
-                        receiverHexAddress = receiverHexAddress.startsWith("0x") ? receiverHexAddress.substring(2) : receiverHexAddress;
-                        byte[] receiverAddress = Hex.decode(receiverHexAddress);
-
-                        boolean success = Database.transfer(
-                                senderAddress,
-                                receiverAddress,
-                                amount
-                        );
-
-                        if(success) {
-                            System.out.println("Transfer successful: " + json.toString());
-                        } else {
-                            System.err.println("Transfer failed: " + json.toString());
-                        }
-                    } else {
-                        System.err.println("Invalid transfer transaction: " + json.toString());
-                    }
-                }
-            }
-        });
-    }
-
-    public static void checkRootHashValidityAndSaveProgress(long blockNumber) {
-        //check and validate that majority of peers have the same root hash for the given block number 2/3 are needed
-        byte[] rootHash = Database.getRootHash();
-        if (rootHash == null) {
-            System.err.println("Root hash is null for block number: " + blockNumber);
-            return;
+    /**
+     * Initializes peer list from arguments or defaults.
+     * @param args command-line arguments; if present, each arg is a peer hostname
+     */
+    private static void initializePeers(String[] args) {
+        if (args != null && args.length > 0) {
+            peersToCheckRootHashWith = Arrays.asList(args);
+            LOGGER.info("Using peers from args: " + peersToCheckRootHashWith);
         } else {
-            //Compare
+            peersToCheckRootHashWith = List.of(
+                    "peer1.example.com",
+                    "peer2.example.com",
+                    "peer3.example.com"
+            );
+            LOGGER.info("Using default peers: " + peersToCheckRootHashWith);
+        }
+    }
+
+    private static void subscribeAndSync(long fromBlock) throws IOException, RocksDBException {
+        //The subscription to VIDA transactions has a built in shutdwown hook
+        VidaTransactionSubscription subscription =
+                PWRJ_CLIENT.subscribeToVidaTransactions(
+                        PWRJ_CLIENT,
+                        VIDA_ID,
+                        fromBlock,
+                        Main::onChainProgress,
+                        Main::processTransaction
+                );
+    }
+
+    private static Void onChainProgress(long blockNumber) {
+        try {
+            DatabaseService.setLastCheckedBlock(blockNumber);
+            checkRootHashValidityAndSave(blockNumber);
+            LOGGER.info("Checkpoint updated to block " + blockNumber);
+        } catch (RocksDBException e) {
+            LOGGER.log(Level.WARNING, "Failed to update last checked block: " + blockNumber, e);
+        } finally {
+            return null;
+        }
+    }
+
+    private static void processTransaction(FalconTransaction.PayableVidaDataTxn txn) {
+        try {
+            JSONObject json = new JSONObject(new String(txn.getData(), StandardCharsets.UTF_8));
+            String action = json.optString("action", "");
+            if ("transfer".equalsIgnoreCase(action)) {
+                handleTransfer(json, txn.getSender());
+            }
+        } catch (Exception e) {
+            LOGGER.log(Level.SEVERE, "Error processing transaction: " + txn.getTransactionHash(), e);
+        }
+    }
+
+    private static void handleTransfer(JSONObject json, String senderHex) throws RocksDBException {
+        BigInteger amount = json.optBigInteger("amount", null);
+        String receiverHex = json.optString("receiver", null);
+        if (amount == null || receiverHex == null) {
+            LOGGER.warning("Skipping invalid transfer: " + json);
+            return;
         }
 
-        //save root hash
-        Database.setBlockRootHash(blockNumber, rootHash);
+        byte[] sender = decodeHexAddress(senderHex);
+        byte[] receiver = decodeHexAddress(receiverHex);
+
+        boolean success = DatabaseService.transfer(sender, receiver, amount);
+        if (success) {
+            LOGGER.info("Transfer succeeded: " + json);
+        } else {
+            LOGGER.warning("Transfer failed (insufficient funds): " + json);
+        }
+    }
+
+    private static byte[] decodeHexAddress(String hex) {
+        String clean = hex.startsWith("0x") ? hex.substring(2) : hex;
+        return Hex.decode(clean);
+    }
+
+    private static void checkRootHashValidityAndSave(long blockNumber) {
+        try {
+            byte[] localRoot = DatabaseService.getRootHash();
+            long quorum = (peersToCheckRootHashWith.size() * 2) / 3 + 1;
+            int matches = 0;
+            for (String peer : peersToCheckRootHashWith) {
+                // TODO: fetch peer root via RPC and compare
+                byte[] peerRoot = fetchPeerRootHash(peer, blockNumber);
+                if (Objects.deepEquals(localRoot, peerRoot)) {
+                    matches++;
+                }
+            }
+            if (matches >= quorum) {
+                DatabaseService.setBlockRootHash(blockNumber, localRoot);
+                LOGGER.info("Root hash validated and saved for block " + blockNumber);
+            } else {
+                LOGGER.severe("Root hash mismatch: only " + matches + "/" + peersToCheckRootHashWith.size());
+            }
+        } catch (Exception e) {
+            LOGGER.log(Level.SEVERE, "Error verifying root hash at block " + blockNumber, e);
+        }
+    }
+
+    private static byte[] fetchPeerRootHash(String peer, long blockNumber) {
+        // Placeholder: implement RPC call to peer for block root hash
+        return new byte[0];
     }
 }
