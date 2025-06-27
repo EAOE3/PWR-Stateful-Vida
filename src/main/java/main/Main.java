@@ -1,5 +1,6 @@
 package main;
 
+import api.GET;
 import com.github.pwrlabs.pwrj.entities.FalconTransaction;
 import com.github.pwrlabs.pwrj.protocol.PWRJ;
 import com.github.pwrlabs.pwrj.protocol.VidaTransactionSubscription;
@@ -22,6 +23,8 @@ import java.util.Objects;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import static spark.Spark.port;
+
 /**
  * Entry point for synchronizing VIDA transactions with the local Merkle-backed database.
  */
@@ -29,7 +32,8 @@ public final class Main {
     private static final Logger LOGGER = Logger.getLogger(Main.class.getName());
     private static final long VIDA_ID = 73_746_238L;
     private static final long START_BLOCK = 1L;
-    private static final PWRJ PWRJ_CLIENT = new PWRJ("https://pwrrrpc.pwrlabs.io/");
+    private static final PWRJ PWRJ_CLIENT = new PWRJ("https://pwrrpc.pwrlabs.io/");
+    private static final int PORT = 8080;
     private static List<String> peersToCheckRootHashWith;
     private static VidaTransactionSubscription subscription;
     private static final HttpClient HTTP_CLIENT = HttpClient.newHttpClient();
@@ -37,6 +41,8 @@ public final class Main {
 
     public static void main(String[] args) {
         try {
+            port(PORT);
+            GET.run();
             initInitialBalances();
             initializePeers(args);
             long lastBlock = DatabaseService.getLastCheckedBlock();

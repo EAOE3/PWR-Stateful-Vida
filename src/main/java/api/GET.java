@@ -6,6 +6,11 @@ import main.DatabaseService;
 import static spark.Spark.get;
 
 public class GET {
+    /**
+     * Initializes and registers all GET endpoint handlers with the Spark framework.
+     * Currently registers the /rootHash endpoint for retrieving Merkle root hashes
+     * for specific block numbers.
+     */
     public static void run() {
         get("/rootHash", (request, response) -> {
             try {

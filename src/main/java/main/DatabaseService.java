@@ -10,7 +10,17 @@ import java.util.Objects;
 
 /**
  * Singleton service for interacting with the underlying RocksDB-backed MerkleTree.
- * All operations may throw RocksDBException.
+ * Provides methods for managing account balances, transfers, block tracking, and
+ * Merkle root hash operations. All operations may throw RocksDBException.
+ *
+ * <p>This service maintains:
+ * <ul>
+ *   <li>Account balances stored in the Merkle tree</li>
+ *   <li>Last checked block number for synchronization</li>
+ *   <li>Historical block root hashes for validation</li>
+ * </ul>
+ *
+ * <p>The underlying MerkleTree is automatically closed on JVM shutdown.
  */
 public final class DatabaseService {
     private static final MerkleTree TREE;
@@ -48,6 +58,11 @@ public final class DatabaseService {
         TREE.flushToDisk();
     }
 
+    /**
+     * Reverts all unsaved changes to the Merkle tree, restoring it to the last
+     * flushed state. This is useful for rolling back invalid transactions or
+     * when consensus validation fails.
+     */
     public static void revertUnsavedChanges() {
             TREE.revertUnsavedChanges();
     }
