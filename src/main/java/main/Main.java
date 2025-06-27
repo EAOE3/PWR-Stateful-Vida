@@ -39,6 +39,11 @@ public final class Main {
     private static final HttpClient HTTP_CLIENT = HttpClient.newHttpClient();
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(10);
 
+    /**
+     * Application entry point.
+     *
+     * @param args optional list of peer hosts to query for root hash
+     */
     public static void main(String[] args) {
         try {
             port(PORT);
@@ -53,6 +58,11 @@ public final class Main {
         }
     }
 
+    /**
+     * Sets up the initial account balances when starting from a fresh database.
+     *
+     * @throws RocksDBException if persisting the balances fails
+     */
     private static void initInitialBalances() throws RocksDBException {
         if(DatabaseService.getLastCheckedBlock() == 0) {
             DatabaseService.setBalance(Hex.decode("c767ea1d613eefe0ce1610b18cb047881bafb829"), BigInteger.valueOf(1_0000_000_000_000L));
@@ -79,6 +89,13 @@ public final class Main {
         }
     }
 
+    /**
+     * Subscribes to VIDA transactions starting from the given block.
+     *
+     * @param fromBlock block height to begin synchronization from
+     * @throws IOException if network communication fails
+     * @throws RocksDBException if persisting data fails
+     */
     private static void subscribeAndSync(long fromBlock) throws IOException, RocksDBException {
         //The subscription to VIDA transactions has a built in shutdwown hook
         subscription =
@@ -91,6 +108,12 @@ public final class Main {
                 );
     }
 
+    /**
+     * Callback invoked as blocks are processed.
+     *
+     * @param blockNumber block height that was just processed
+     * @return always {@code null}
+     */
     private static Void onChainProgress(long blockNumber) {
         try {
             DatabaseService.setLastCheckedBlock(blockNumber);
@@ -103,6 +126,11 @@ public final class Main {
         }
     }
 
+    /**
+     * Processes a single VIDA transaction.
+     *
+     * @param txn the transaction to handle
+     */
     private static void processTransaction(FalconTransaction.PayableVidaDataTxn txn) {
         try {
             JSONObject json = new JSONObject(new String(txn.getData(), StandardCharsets.UTF_8));
@@ -115,6 +143,13 @@ public final class Main {
         }
     }
 
+    /**
+     * Executes a token transfer described by the given JSON payload.
+     *
+     * @param json       transfer description
+     * @param senderHex  hexadecimal sender address
+     * @throws RocksDBException if balance updates fail
+     */
     private static void handleTransfer(JSONObject json, String senderHex) throws RocksDBException {
         BigInteger amount = json.optBigInteger("amount", null);
         String receiverHex = json.optString("receiver", null);
@@ -134,11 +169,23 @@ public final class Main {
         }
     }
 
+    /**
+     * Decodes a hexadecimal address into raw bytes.
+     *
+     * @param hex hexadecimal string, optionally prefixed with {@code 0x}
+     * @return 20-byte address
+     */
     private static byte[] decodeHexAddress(String hex) {
         String clean = hex.startsWith("0x") ? hex.substring(2) : hex;
         return Hex.decode(clean);
     }
 
+    /**
+     * Validates the local Merkle root against peers and persists it if a quorum
+     * of peers agree.
+     *
+     * @param blockNumber block height being validated
+     */
     private static void checkRootHashValidityAndSave(long blockNumber) {
         try {
             byte[] localRoot = DatabaseService.getRootHash();
