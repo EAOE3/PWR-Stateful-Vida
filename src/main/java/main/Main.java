@@ -17,9 +17,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -31,7 +29,7 @@ import static spark.Spark.port;
 public final class Main {
     private static final Logger LOGGER = Logger.getLogger(Main.class.getName());
     private static final long VIDA_ID = 73_746_238L;
-    private static final long START_BLOCK = 1L;
+    private static final long START_BLOCK = 22338;
     private static final PWRJ PWRJ_CLIENT = new PWRJ("https://pwrrpc.pwrlabs.io/");
     private static final int PORT = 8080;
     private static List<String> peersToCheckRootHashWith;
@@ -39,12 +37,39 @@ public final class Main {
     private static final HttpClient HTTP_CLIENT = HttpClient.newHttpClient();
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(10);
 
+    private static Map<String /*Address*/, Long /*Balance*/> userTokenBalances = new HashMap<>();
+
+    private static boolean transferTokens(String from, String to, long amount) {
+        if (from == null || to == null || amount <= 0) {
+            System.err.println("Invalid transfer parameters: from=" + from + ", to=" + to + ", amount=" + amount);
+            return false;
+        }
+
+        // Normalize addresses to lowercase for consistency
+        from = from.toLowerCase();
+        to = to.toLowerCase();
+
+        Long fromBalance = userTokenBalances.get(from);
+        if (fromBalance == null || fromBalance < amount) {
+            System.err.println("Insufficient balance for transfer: " + from + " has " + fromBalance + ", trying to transfer " + amount);
+            return false;
+        }
+
+        userTokenBalances.put(from, fromBalance - amount);
+        userTokenBalances.put(to, userTokenBalances.getOrDefault(to, 0L) + amount);
+        System.out.println("Transfer successful: " + amount + " tokens from " + from + " to " + to);
+
+        return true;
+    }
     /**
      * Application entry point.
      *
      * @param args optional list of peer hosts to query for root hash
      */
     public static void main(String[] args) {
+        //initial balances
+        userTokenBalances.put("0xc767ea1d613eefe0ce1610b18cb047881bafb829".toLowerCase(), 1_000_000_000_000L); //Replace the address with your address or any desired address
+        userTokenBalances.put("0x3b4412f57828d1ceb0dbf0d460f7eb1f21fed8b4".toLowerCase(), 1_000_000_000_000L);
         try {
             port(PORT);
             GET.run();
